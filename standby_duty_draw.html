@@ -989,6 +989,9 @@ async function openDrawModal(name) {
     return;
   }
 
+  // Pick the real result FIRST, so the animation always ends on the true outcome.
+  const chosen = pool[Math.floor(Math.random() * pool.length)];
+
   activeDrawName = name;
   buildWheel();
   document.getElementById('modalName').textContent = name;
@@ -997,30 +1000,46 @@ async function openDrawModal(name) {
   document.getElementById('modalCloseBtn').className = 'modal-close-btn';
   document.getElementById('overlay').classList.remove('hidden');
 
-  // Spinning highlight across the three day chips, slowing down like a wheel
   const chips = [...document.querySelectorAll('.wheel-chip')];
-  const stepDelays = [80, 80, 90, 100, 120, 140, 170, 210, 260, 320, 400];
-  let i = 0;
+  const chosenIndex = chips.findIndex(c => c.dataset.key === chosen);
 
+  // Build a shuffled sequence of highlights (no immediate repeats) that
+  // slows down and ends exactly on the pre-chosen day — genuinely random
+  // to watch, and never mismatched with the real result.
+  const stepDelays = [80, 80, 90, 100, 120, 140, 170, 210, 260, 320, 400];
+  const sequence = [];
+  let lastIdx = -1;
+  for (let s = 0; s < stepDelays.length - 1; s++) {
+    let idx;
+    do { idx = Math.floor(Math.random() * chips.length); } while (idx === lastIdx && chips.length > 1);
+    sequence.push(idx);
+    lastIdx = idx;
+  }
+  sequence.push(chosenIndex); // guaranteed final frame = the real result
+
+  let i = 0;
   function step() {
     chips.forEach(c => c.classList.remove('lit'));
-    chips[i % chips.length].classList.add('lit');
+    chips[sequence[i]].classList.add('lit');
     i++;
-    if (i < stepDelays.length) {
+    if (i < sequence.length) {
       setTimeout(step, stepDelays[i]);
     } else {
-      finalizeDraw(name, pool, chips);
+      commitDraw(name, chosen, chips);
     }
   }
   step();
 }
 
-async function finalizeDraw(name, pool, chips) {
-  // Re-check freshest state right before committing, in case someone else drew meanwhile
-  // (e.g. the same person had this link open in two tabs/devices)
+async function commitDraw(name, chosen, chips) {
+  chips.forEach(c => c.classList.remove('lit'));
+  const winnerChip = chips.find(c => c.dataset.key === chosen);
+  if (winnerChip) winnerChip.classList.add('winner');
+
+  // Safety check: re-verify nothing changed (same person double-drawing,
+  // or the day filling up) right before actually committing the save.
   await loadAssignments();
   if (assignments[name]) {
-    chips.forEach(c => c.classList.remove('lit'));
     const revealEl = document.getElementById('revealMsg');
     revealEl.textContent = name + ' was already recorded for ' + dayLabel(assignments[name]) + '.';
     revealEl.classList.add('show');
@@ -1029,13 +1048,6 @@ async function finalizeDraw(name, pool, chips) {
     render();
     return;
   }
-  const freshPool = availableDays();
-  const choicePool = freshPool.length > 0 ? freshPool : pool;
-  const chosen = choicePool[Math.floor(Math.random() * choicePool.length)];
-
-  chips.forEach(c => c.classList.remove('lit'));
-  const winnerChip = chips.find(c => c.dataset.key === chosen);
-  if (winnerChip) winnerChip.classList.add('winner');
 
   assignments[name] = chosen;
 
