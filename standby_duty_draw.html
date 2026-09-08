@@ -659,7 +659,10 @@
 
   <div class="footer-row no-print" id="footerRow">
     <span class="status-line" id="status"></span>
-    <button class="reset-btn" id="resetBtn">Clear all draws</button>
+    <span style="display:flex; gap:8px;">
+      <button class="reset-btn" id="refreshBtn" style="border-color: var(--panel); color: var(--panel);">Refresh</button>
+      <button class="reset-btn" id="resetBtn">Clear all draws</button>
+    </span>
   </div>
 
   <button class="qr-toggle no-print" id="qrToggle">Admin: generate per-person QR codes</button>
@@ -884,7 +887,10 @@ function spawnConfetti(container) {
   }
 }
 
+let activeDrawName = null;
+
 async function openDrawModal(name) {
+  if (activeDrawName) return; // one draw animation at a time, avoid double-fires
   setStatus('');
   await loadAssignments();
 
@@ -901,6 +907,7 @@ async function openDrawModal(name) {
     return;
   }
 
+  activeDrawName = name;
   buildWheel();
   document.getElementById('modalName').textContent = name;
   document.getElementById('revealMsg').className = 'reveal-msg';
@@ -928,10 +935,15 @@ async function openDrawModal(name) {
 
 async function finalizeDraw(name, pool, chips) {
   // Re-check freshest state right before committing, in case someone else drew meanwhile
+  // (e.g. the same person had this link open in two tabs/devices)
   await loadAssignments();
   if (assignments[name]) {
     chips.forEach(c => c.classList.remove('lit'));
-    document.getElementById('overlay').classList.add('hidden');
+    const revealEl = document.getElementById('revealMsg');
+    revealEl.textContent = name + ' was already recorded for ' + dayLabel(assignments[name]) + '.';
+    revealEl.classList.add('show');
+    document.getElementById('modalCloseBtn').classList.add('show');
+    activeDrawName = null;
     render();
     return;
   }
@@ -959,11 +971,13 @@ async function finalizeDraw(name, pool, chips) {
     delete assignments[name];
   }
 
+  activeDrawName = null;
   document.getElementById('modalCloseBtn').classList.add('show');
   render();
 }
 
 document.getElementById('modalCloseBtn').addEventListener('click', () => {
+  activeDrawName = null;
   document.getElementById('overlay').classList.add('hidden');
   render();
 });
@@ -1006,7 +1020,26 @@ async function handleReset() {
 
 document.getElementById('resetBtn').addEventListener('click', handleReset);
 
+document.getElementById('refreshBtn').addEventListener('click', async () => {
+  if (activeDrawName) return;
+  await loadAssignments();
+  render();
+  setStatus('Board refreshed.', false);
+});
+
 window.addEventListener('hashchange', render);
+
+// Live auto-refresh: pick up draws made from other devices/personal links
+setInterval(async () => {
+  if (activeDrawName) return; // don't disturb an in-progress draw
+  if (!document.getElementById('overlay').classList.contains('hidden')) return;
+  try {
+    await loadAssignments();
+    render();
+  } catch (e) {
+    // silent — next tick will retry
+  }
+}, 6000);
 
 // --- QR admin panel ---
 document.getElementById('qrToggle').addEventListener('click', () => {
