@@ -180,6 +180,24 @@
     margin-bottom: 10px;
   }
 
+  .shift-block {
+    margin-bottom: 12px;
+  }
+
+  .shift-block:last-child {
+    margin-bottom: 0;
+  }
+
+  .shift-title {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.3px;
+    color: #9FB0C4;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #33465F;
+  }
+
   .slot-list {
     list-style: none;
     margin: 0;
@@ -386,6 +404,25 @@
     flex-direction: column;
     gap: 8px;
     margin: 22px 0 20px;
+  }
+
+  .wheel-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .wheel-grid .wheel-chip {
+    padding: 10px 4px;
+    text-align: center;
+  }
+
+  .wheel-grid .wheel-chip .lbl {
+    font-size: 9px;
+  }
+
+  .wheel-grid .wheel-chip .dt {
+    font-size: 12px;
   }
 
   .wheel-chip {
@@ -716,10 +753,38 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 const DAYS = [
-  { key: 'oct10', name: 'DAY ONE', date: 'Sat, 10 Oct 2026', cap: 5 },
-  { key: 'oct11', name: 'DAY TWO', date: 'Sun, 11 Oct 2026', cap: 5 },
-  { key: 'oct12', name: 'DAY THREE', date: 'Mon, 12 Oct 2026', cap: 4 }
+  { key: 'oct10', name: 'DAY ONE', date: 'Sat, 10 Oct 2026', shifts: [
+      { key: 's1', name: 'Shift 1', cap: 2 },
+      { key: 's2', name: 'Shift 2', cap: 2 },
+      { key: 's3', name: 'Shift 3', cap: 1 }
+  ]},
+  { key: 'oct11', name: 'DAY TWO', date: 'Sun, 11 Oct 2026', shifts: [
+      { key: 's1', name: 'Shift 1', cap: 2 },
+      { key: 's2', name: 'Shift 2', cap: 2 },
+      { key: 's3', name: 'Shift 3', cap: 1 }
+  ]},
+  { key: 'oct12', name: 'DAY THREE', date: 'Mon, 12 Oct 2026', shifts: [
+      { key: 's1', name: 'Shift 1', cap: 2 },
+      { key: 's2', name: 'Shift 2', cap: 1 },
+      { key: 's3', name: 'Shift 3', cap: 1 }
+  ]}
 ];
+
+// Flat list of every Day+Shift combination — this is what gets randomly drawn.
+const COMBOS = [];
+DAYS.forEach(d => {
+  d.shifts.forEach(s => {
+    COMBOS.push({
+      comboKey: d.key + '_' + s.key,
+      dayKey: d.key,
+      dayName: d.name,
+      dayDate: d.date,
+      shiftKey: s.key,
+      shiftName: s.name,
+      cap: s.cap
+    });
+  });
+});
 
 const PARTICIPANTS = [
   'Mr. Thoem Puthea', 'Mr. Chea Chiheang', 'Mr. Leap Channo', 'Mr. Thai Vichet',
@@ -757,14 +822,18 @@ function getPersonalSlug() {
   return m ? m[1].toLowerCase() : null;
 }
 
-function dayLabel(key) {
-  const d = DAYS.find(d => d.key === key);
-  return d ? d.date : key;
+function comboByKey(comboKey) {
+  return COMBOS.find(c => c.comboKey === comboKey);
 }
 
-function dayShort(key) {
-  const d = DAYS.find(d => d.key === key);
-  return d ? d.name : key;
+function comboLabelFull(comboKey) {
+  const c = comboByKey(comboKey);
+  return c ? (c.dayDate + ' — ' + c.shiftName) : comboKey;
+}
+
+function comboLabelShort(comboKey) {
+  const c = comboByKey(comboKey);
+  return c ? (c.dayName + ' · ' + c.shiftName) : comboKey;
 }
 
 function toSlugKeyed(obj) {
@@ -831,14 +900,15 @@ async function saveAssignments() {
 
 let lastStoreError = null;
 
-function capacityRemaining(dayKey) {
-  const cap = DAYS.find(d => d.key === dayKey).cap;
-  const used = Object.values(assignments).filter(v => v === dayKey).length;
-  return cap - used;
+function capacityRemaining(comboKey) {
+  const combo = comboByKey(comboKey);
+  if (!combo) return 0;
+  const used = Object.values(assignments).filter(v => v === comboKey).length;
+  return combo.cap - used;
 }
 
-function availableDays() {
-  return DAYS.filter(d => capacityRemaining(d.key) > 0).map(d => d.key);
+function availableCombos() {
+  return COMBOS.filter(c => capacityRemaining(c.comboKey) > 0).map(c => c.comboKey);
 }
 
 function setStatus(msg, isError) {
@@ -878,23 +948,35 @@ function render() {
   document.getElementById('boardSummary').textContent =
     'Duty board — who\'s on which day (' + totalFilled + ' / ' + PARTICIPANTS.length + ' drawn)';
 
-  // Board (shown in both modes)
+  // Board (shown in both modes) — now grouped by Day, then by Shift
   const board = document.getElementById('board');
   board.innerHTML = '';
   DAYS.forEach(day => {
-    const names = Object.keys(assignments).filter(n => assignments[n] === day.key);
+    const dayCombos = COMBOS.filter(c => c.dayKey === day.key);
+    const dayTotalFilled = dayCombos.reduce((sum, c) =>
+      sum + Object.values(assignments).filter(v => v === c.comboKey).length, 0);
+    const dayTotalCap = dayCombos.reduce((sum, c) => sum + c.cap, 0);
+
     const col = document.createElement('div');
     col.className = 'day-col';
     col.innerHTML = `
       <div class="day-name">${day.name}</div>
       <div class="day-date">${day.date}</div>
-      <div class="count">${names.length} / ${day.cap} filled</div>
-      <ul class="slot-list">
-        ${Array.from({length: day.cap}).map((_, i) => {
-          const n = names[i];
-          return n ? `<li>${n}</li>` : `<li class="empty">open slot</li>`;
-        }).join('')}
-      </ul>
+      <div class="count">${dayTotalFilled} / ${dayTotalCap} filled</div>
+      ${dayCombos.map(combo => {
+        const names = Object.keys(assignments).filter(n => assignments[n] === combo.comboKey);
+        return `
+          <div class="shift-block">
+            <div class="shift-title">${combo.shiftName} (${names.length}/${combo.cap})</div>
+            <ul class="slot-list">
+              ${Array.from({length: combo.cap}).map((_, i) => {
+                const n = names[i];
+                return n ? `<li>${n}</li>` : `<li class="empty">open slot</li>`;
+              }).join('')}
+            </ul>
+          </div>
+        `;
+      }).join('')}
     `;
     board.appendChild(col);
   });
@@ -926,7 +1008,7 @@ function buildTag(name) {
   const tag = document.createElement('div');
   tag.className = 'tag' + (assigned ? ' assigned' : '');
 
-  const resultText = assigned ? dayShort(assigned) + ' · ' + dayLabel(assigned).split(', ')[1] : '';
+  const resultText = assigned ? comboLabelShort(assigned) : '';
 
   tag.innerHTML = `
     <div class="name">${name}</div>
@@ -937,7 +1019,7 @@ function buildTag(name) {
     const btn = document.createElement('button');
     btn.className = 'draw-btn';
     btn.textContent = 'Draw';
-    btn.disabled = availableDays().length === 0;
+    btn.disabled = availableCombos().length === 0;
     btn.addEventListener('click', () => openDrawModal(name));
     tag.appendChild(btn);
   }
@@ -947,10 +1029,11 @@ function buildTag(name) {
 
 function buildWheel() {
   const wheel = document.getElementById('wheel');
-  wheel.innerHTML = DAYS.map(d => `
-    <div class="wheel-chip" data-key="${d.key}">
-      <div class="lbl">${d.name}</div>
-      <div class="dt">${d.date}</div>
+  wheel.className = 'wheel wheel-grid';
+  wheel.innerHTML = COMBOS.map(c => `
+    <div class="wheel-chip" data-key="${c.comboKey}">
+      <div class="lbl">${c.dayName}</div>
+      <div class="dt">${c.shiftName}</div>
     </div>
   `).join('');
 }
@@ -978,11 +1061,11 @@ async function openDrawModal(name) {
 
   if (assignments[name]) {
     render();
-    setStatus(name + ' has already been drawn for ' + dayLabel(assignments[name]) + '.', false);
+    setStatus(name + ' has already been drawn for ' + comboLabelFull(assignments[name]) + '.', false);
     return;
   }
 
-  const pool = availableDays();
+  const pool = availableCombos();
   if (pool.length === 0) {
     render();
     setStatus('All slots are full.', true);
@@ -1041,7 +1124,7 @@ async function commitDraw(name, chosen, chips) {
   await loadAssignments();
   if (assignments[name]) {
     const revealEl = document.getElementById('revealMsg');
-    revealEl.textContent = name + ' was already recorded for ' + dayLabel(assignments[name]) + '.';
+    revealEl.textContent = name + ' was already recorded for ' + comboLabelFull(assignments[name]) + '.';
     revealEl.classList.add('show');
     document.getElementById('modalCloseBtn').classList.add('show');
     activeDrawName = null;
@@ -1054,10 +1137,10 @@ async function commitDraw(name, chosen, chips) {
   try {
     await saveAssignments();
     const revealEl = document.getElementById('revealMsg');
-    revealEl.textContent = name + ' is on standby for ' + dayLabel(chosen) + '.';
+    revealEl.textContent = name + ' is on standby for ' + comboLabelFull(chosen) + '.';
     revealEl.classList.add('show');
     spawnConfetti(document.getElementById('drawModal'));
-    setStatus(name + ' drew ' + dayLabel(chosen) + '.', false);
+    setStatus(name + ' drew ' + comboLabelFull(chosen) + '.', false);
   } catch (e) {
     const revealEl = document.getElementById('revealMsg');
     revealEl.textContent = 'Could not save: ' + (e.message || e) + ' — please try again.';
