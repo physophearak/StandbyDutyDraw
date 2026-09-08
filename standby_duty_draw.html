@@ -27,6 +27,8 @@
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+  .hidden { display: none !important; }
+
   html, body {
     margin: 0;
     padding: 0;
@@ -642,6 +644,30 @@
     <div>Loading roster…</div>
   </div>
 
+  <div id="setupScreen" class="hidden">
+    <div class="masthead">
+      <h1>Standby Duty Draw</h1>
+      <div class="range">One-time setup needed</div>
+    </div>
+    <p style="font-family:'Segoe UI',Arial,sans-serif; font-size:14px; color:var(--ink-soft); line-height:1.6; max-width:520px;">
+      This page needs a small shared data store so everyone's draws stay in sync
+      across devices. Click below to create one (uses the free
+      <a href="https://kvdb.io" target="_blank" rel="noopener">kvdb.io</a> service) — this only
+      needs to be done once, by whoever is setting this up.
+    </p>
+    <button id="createBucketBtn" class="qr-panel-btn" style="font-family:'Segoe UI',Arial,sans-serif; font-size:13px; background:var(--panel); color:#fff; border:none; padding:10px 18px; border-radius:4px; cursor:pointer;">
+      Create shared data store
+    </button>
+    <p id="setupStatus" style="font-family:'Segoe UI',Arial,sans-serif; font-size:13px; margin-top:14px;"></p>
+    <div id="setupResult" style="display:none; margin-top:10px; padding:14px; background:#fff; border:1px solid var(--line); border-radius:4px; font-family:'Segoe UI',Arial,sans-serif; font-size:13px; max-width:520px;">
+      <strong>Bucket created:</strong>
+      <div id="bucketIdBox" style="font-family:monospace; font-size:15px; background:var(--paper); padding:8px; margin:8px 0; border-radius:3px; word-break:break-all;"></div>
+      Send this ID to whoever maintains the page source so they can set
+      <code>KVDB_BUCKET_ID</code> to this value and republish. The draw won't
+      save until that's done.
+    </div>
+  </div>
+
   <div id="appBody" class="hidden">
 
   <div class="masthead">
@@ -709,6 +735,17 @@ const PARTICIPANTS = [
 const STORE_KEY = 'standby_draw_oct_2026';
 let assignments = {}; // name -> day key
 
+// --- Shared data store (KVdb.io) ---
+// This bucket ID is public once set — anyone viewing the page source can see
+// it, same as the data itself is meant to be shared across the whole team.
+// Leave BUCKET_ID empty until it's been created once (see setup screen).
+const KVDB_BUCKET_ID = '';
+const KVDB_BASE = 'https://kvdb.io';
+
+function kvdbUrl() {
+  return `${KVDB_BASE}/${KVDB_BUCKET_ID}/${STORE_KEY}`;
+}
+
 function slugify(name) {
   return name
     .toLowerCase()
@@ -737,16 +774,28 @@ function dayShort(key) {
 }
 
 async function loadAssignments() {
+  if (!KVDB_BUCKET_ID) { assignments = {}; return; }
   try {
-    const res = await window.storage.get(STORE_KEY, true);
-    assignments = res && res.value ? JSON.parse(res.value) : {};
+    const res = await fetch(kvdbUrl(), { cache: 'no-store' });
+    if (res.status === 404) {
+      assignments = {};
+      return;
+    }
+    if (!res.ok) throw new Error('load failed: ' + res.status);
+    const text = await res.text();
+    assignments = text ? JSON.parse(text) : {};
   } catch (e) {
-    assignments = {};
+    assignments = assignments || {};
   }
 }
 
 async function saveAssignments() {
-  await window.storage.set(STORE_KEY, JSON.stringify(assignments), true);
+  if (!KVDB_BUCKET_ID) throw new Error('No data store connected yet.');
+  const res = await fetch(kvdbUrl(), {
+    method: 'POST',
+    body: JSON.stringify(assignments)
+  });
+  if (!res.ok) throw new Error('save failed: ' + res.status);
 }
 
 function capacityRemaining(dayKey) {
@@ -1093,7 +1142,34 @@ document.getElementById('boardDetails').addEventListener('toggle', function() {
   this.dataset.userToggled = '1';
 });
 
+document.getElementById('createBucketBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('createBucketBtn');
+  const statusEl = document.getElementById('setupStatus');
+  btn.disabled = true;
+  statusEl.textContent = 'Creating your data store…';
+  statusEl.style.color = 'var(--ink-soft)';
+  try {
+    const res = await fetch('https://kvdb.io/', { method: 'POST' });
+    if (!res.ok) throw new Error('status ' + res.status);
+    const bucketId = (await res.text()).trim();
+    if (!bucketId) throw new Error('empty response');
+    statusEl.textContent = 'Done — copy the ID below.';
+    statusEl.style.color = 'var(--good)';
+    document.getElementById('bucketIdBox').textContent = bucketId;
+    document.getElementById('setupResult').style.display = 'block';
+  } catch (e) {
+    statusEl.textContent = 'Could not create a data store automatically. Visit https://kvdb.io directly to create one, then send the bucket ID to whoever maintains this page.';
+    statusEl.style.color = 'var(--alert)';
+    btn.disabled = false;
+  }
+});
+
 (async function init() {
+  if (!KVDB_BUCKET_ID) {
+    document.getElementById('initialLoader').classList.add('hidden');
+    document.getElementById('setupScreen').classList.remove('hidden');
+    return;
+  }
   await loadAssignments();
   render();
   document.getElementById('initialLoader').classList.add('hidden');
