@@ -767,6 +767,23 @@ function dayShort(key) {
   return d ? d.name : key;
 }
 
+function toSlugKeyed(obj) {
+  const out = {};
+  Object.keys(obj || {}).forEach(name => {
+    out[slugify(name)] = obj[name];
+  });
+  return out;
+}
+
+function toNameKeyed(obj) {
+  const out = {};
+  Object.keys(obj || {}).forEach(slug => {
+    const name = SLUG_TO_NAME[slug];
+    if (name) out[name] = obj[slug];
+  });
+  return out;
+}
+
 async function loadAssignments() {
   if (!FIREBASE_DB_URL) { assignments = {}; return; }
   try {
@@ -776,7 +793,7 @@ async function loadAssignments() {
       throw new Error('load failed: ' + res.status + ' ' + bodyText);
     }
     const data = await res.json();
-    assignments = data || {};
+    assignments = toNameKeyed(data); // Firebase keys are slugs; convert back to full names
     lastStoreError = null;
   } catch (e) {
     assignments = assignments || {};
@@ -789,7 +806,7 @@ async function saveAssignments() {
   const res = await fetch(firebaseUrl(), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(assignments)
+    body: JSON.stringify(toSlugKeyed(assignments)) // Firebase keys can't contain "."
   });
   if (!res.ok) {
     const bodyText = await res.text().catch(() => '');
