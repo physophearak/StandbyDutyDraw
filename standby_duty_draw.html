@@ -784,10 +784,17 @@ function toNameKeyed(obj) {
   return out;
 }
 
+function fetchWithTimeout(url, opts, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms || 8000);
+  return fetch(url, Object.assign({}, opts, { signal: controller.signal }))
+    .finally(() => clearTimeout(timer));
+}
+
 async function loadAssignments() {
   if (!FIREBASE_DB_URL) { assignments = {}; return; }
   try {
-    const res = await fetch(firebaseUrl(), { cache: 'no-store' });
+    const res = await fetchWithTimeout(firebaseUrl(), { cache: 'no-store' }, 8000);
     if (!res.ok) {
       const bodyText = await res.text().catch(() => '');
       throw new Error('load failed: ' + res.status + ' ' + bodyText);
@@ -797,17 +804,25 @@ async function loadAssignments() {
     lastStoreError = null;
   } catch (e) {
     assignments = assignments || {};
-    lastStoreError = e.message || String(e);
+    lastStoreError = (e.name === 'AbortError') ? 'Timed out reaching the data store (8s).' : (e.message || String(e));
   }
 }
 
 async function saveAssignments() {
   if (!FIREBASE_DB_URL) throw new Error('No data store connected yet.');
-  const res = await fetch(firebaseUrl(), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(toSlugKeyed(assignments)) // Firebase keys can't contain "."
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(firebaseUrl(), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(toSlugKeyed(assignments)) // Firebase keys can't contain "."
+    }, 8000);
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      throw new Error('Timed out reaching the data store (8s) — check your connection or any ad-blocker/VPN that might block firebasedatabase.app.');
+    }
+    throw new Error('Network error: ' + (e.message || e));
+  }
   if (!res.ok) {
     const bodyText = await res.text().catch(() => '');
     throw new Error('HTTP ' + res.status + (bodyText ? ' — ' + bodyText : ''));
@@ -1152,6 +1167,33 @@ document.getElementById('generateQrBtn').addEventListener('click', () => {
       qrHolder.textContent = '(QR library failed to load — link above still works)';
     }
   });
+});
+
+function surfaceUnexpectedError(message) {
+  try {
+    const overlay = document.getElementById('overlay');
+    if (overlay && !overlay.classList.contains('hidden')) {
+      const revealEl = document.getElementById('revealMsg');
+      if (revealEl) {
+        revealEl.textContent = 'Unexpected error: ' + message;
+        revealEl.className = 'reveal-msg show error';
+      }
+      const closeBtn = document.getElementById('modalCloseBtn');
+      if (closeBtn) closeBtn.classList.add('show');
+    } else {
+      setStatus('Unexpected error: ' + message, true);
+    }
+  } catch (e) { /* last resort, nothing more we can do */ }
+  activeDrawName = null;
+}
+
+window.addEventListener('unhandledrejection', function(ev) {
+  const reason = ev && ev.reason;
+  surfaceUnexpectedError(reason && reason.message ? reason.message : String(reason));
+});
+
+window.addEventListener('error', function(ev) {
+  surfaceUnexpectedError(ev && ev.message ? ev.message : 'unknown script error');
 });
 
 document.getElementById('printQrBtn').addEventListener('click', () => window.print());
