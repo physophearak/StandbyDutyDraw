@@ -771,11 +771,16 @@ async function loadAssignments() {
   if (!FIREBASE_DB_URL) { assignments = {}; return; }
   try {
     const res = await fetch(firebaseUrl(), { cache: 'no-store' });
-    if (!res.ok) throw new Error('load failed: ' + res.status);
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      throw new Error('load failed: ' + res.status + ' ' + bodyText);
+    }
     const data = await res.json();
     assignments = data || {};
+    lastStoreError = null;
   } catch (e) {
     assignments = assignments || {};
+    lastStoreError = e.message || String(e);
   }
 }
 
@@ -786,8 +791,13 @@ async function saveAssignments() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(assignments)
   });
-  if (!res.ok) throw new Error('save failed: ' + res.status);
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => '');
+    throw new Error('HTTP ' + res.status + (bodyText ? ' — ' + bodyText : ''));
+  }
 }
+
+let lastStoreError = null;
 
 function capacityRemaining(dayKey) {
   const cap = DAYS.find(d => d.key === dayKey).cap;
@@ -1006,7 +1016,7 @@ async function finalizeDraw(name, pool, chips) {
     setStatus(name + ' drew ' + dayLabel(chosen) + '.', false);
   } catch (e) {
     const revealEl = document.getElementById('revealMsg');
-    revealEl.textContent = 'Could not save the result — please try again.';
+    revealEl.textContent = 'Could not save: ' + (e.message || e) + ' — please try again.';
     revealEl.className = 'reveal-msg show error';
     delete assignments[name];
   }
