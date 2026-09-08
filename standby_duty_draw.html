@@ -731,30 +731,13 @@ const PARTICIPANTS = [
 const STORE_KEY = 'standby_draw_oct_2026';
 let assignments = {}; // name -> day key
 
-// --- Shared data store (a JSON file in this GitHub repo, via the GitHub API) ---
-// GITHUB_TOKEN is intentionally public/embedded here — a fine-grained token
-// scoped to ONLY this repo's Contents (read/write), so the worst case if
-// misused is someone editing the roster data file, nothing else.
-const GITHUB_TOKEN = '';
-const GITHUB_REPO = 'physophearak/StandbyDutyDraw';
-const GITHUB_FILE_PATH = 'data/assignments.json';
-const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/contents/${GITHUB_FILE_PATH}`;
+// --- Shared data store (Firebase Realtime Database) ---
+// Public URL, but the rules only open the one path used below — the
+// database itself has no secret embedded, unlike the GitHub-token approach.
+const FIREBASE_DB_URL = 'https://standbydutydraw-default-rtdb.asia-southeast1.firebasedatabase.app';
 
-let currentFileSha = null; // tracks the file version for safe overwrites
-
-function ghHeaders() {
-  return {
-    'Authorization': 'Bearer ' + GITHUB_TOKEN,
-    'Accept': 'application/vnd.github+json'
-  };
-}
-
-function b64EncodeUnicode(str) {
-  return btoa(unescape(encodeURIComponent(str)));
-}
-
-function b64DecodeUnicode(str) {
-  return decodeURIComponent(escape(atob(str)));
+function firebaseUrl() {
+  return `${FIREBASE_DB_URL}/${STORE_KEY}.json`;
 }
 
 function slugify(name) {
@@ -785,80 +768,25 @@ function dayShort(key) {
 }
 
 async function loadAssignments() {
-  if (!GITHUB_TOKEN) { assignments = {}; return; }
+  if (!FIREBASE_DB_URL) { assignments = {}; return; }
   try {
-    const res = await fetch(GITHUB_API_URL, { headers: ghHeaders(), cache: 'no-store' });
-    if (res.status === 404) {
-      assignments = {};
-      currentFileSha = null;
-      return;
-    }
+    const res = await fetch(firebaseUrl(), { cache: 'no-store' });
     if (!res.ok) throw new Error('load failed: ' + res.status);
-    const json = await res.json();
-    currentFileSha = json.sha;
-    const decoded = b64DecodeUnicode(json.content.replace(/\n/g, ''));
-    assignments = decoded ? JSON.parse(decoded) : {};
+    const data = await res.json();
+    assignments = data || {};
   } catch (e) {
     assignments = assignments || {};
   }
 }
 
-async function writeAssignmentsFile(message) {
-  const body = {
-    message: message,
-    content: b64EncodeUnicode(JSON.stringify(assignments, null, 2)),
-    branch: 'main'
-  };
-  if (currentFileSha) body.sha = currentFileSha;
-
-  const res = await fetch(GITHUB_API_URL, {
-    method: 'PUT',
-    headers: Object.assign({ 'Content-Type': 'application/json' }, ghHeaders()),
-    body: JSON.stringify(body)
-  });
-
-  if (res.status === 409 || res.status === 422) {
-    // Someone else saved in between — refresh sha and retry once
-    const fresh = await fetch(GITHUB_API_URL, { headers: ghHeaders(), cache: 'no-store' });
-    if (fresh.ok) {
-      const freshJson = await fresh.json();
-      currentFileSha = freshJson.sha;
-      const retryBody = Object.assign({}, body, { sha: currentFileSha });
-      const retryRes = await fetch(GITHUB_API_URL, {
-        method: 'PUT',
-        headers: Object.assign({ 'Content-Type': 'application/json' }, ghHeaders()),
-        body: JSON.stringify(retryBody)
-      });
-      if (!retryRes.ok) throw new Error('save failed after retry: ' + retryRes.status);
-      const retryJson = await retryRes.json();
-      currentFileSha = retryJson.content.sha;
-      return;
-    }
-    throw new Error('save conflict, retry failed');
-  }
-
-  if (!res.ok) throw new Error('save failed: ' + res.status);
-  const resJson = await res.json();
-  currentFileSha = resJson.content.sha;
-}
-
-async function refreshFileSha() {
-  try {
-    const res = await fetch(GITHUB_API_URL, { headers: ghHeaders(), cache: 'no-store' });
-    if (res.status === 404) { currentFileSha = null; return; }
-    if (res.ok) {
-      const json = await res.json();
-      currentFileSha = json.sha;
-    }
-  } catch (e) {
-    // keep whatever sha we had — writeAssignmentsFile's own conflict retry covers this
-  }
-}
-
 async function saveAssignments() {
-  if (!GITHUB_TOKEN) throw new Error('No data store connected yet.');
-  await refreshFileSha();
-  await writeAssignmentsFile('Update standby draw assignments');
+  if (!FIREBASE_DB_URL) throw new Error('No data store connected yet.');
+  const res = await fetch(firebaseUrl(), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(assignments)
+  });
+  if (!res.ok) throw new Error('save failed: ' + res.status);
 }
 
 function capacityRemaining(dayKey) {
@@ -1206,7 +1134,7 @@ document.getElementById('boardDetails').addEventListener('toggle', function() {
 });
 
 (async function init() {
-  if (!GITHUB_TOKEN) {
+  if (!FIREBASE_DB_URL) {
     document.getElementById('initialLoader').classList.add('hidden');
     document.getElementById('setupScreen').classList.remove('hidden');
     return;
