@@ -650,27 +650,17 @@
       <div class="range">One-time setup needed</div>
     </div>
     <div style="font-family:'Segoe UI',Arial,sans-serif; font-size:14px; color:var(--ink-soft); line-height:1.7; max-width:560px;">
-      <p>This page needs a small free shared database so everyone's draws stay
-      in sync across devices. Set up a <strong>Firebase Realtime Database</strong>
-      (free, no credit card, Google account only) — about 3 minutes:</p>
+      <p>This page saves everyone's draws into a JSON file in this same
+      GitHub repo. It needs a fine-grained GitHub token to write to that
+      file — this only needs to be created once by whoever maintains this page.</p>
       <ol style="padding-left: 20px;">
-        <li>Go to <a href="https://console.firebase.google.com" target="_blank" rel="noopener">console.firebase.google.com</a>, sign in, click <strong>Add project</strong>, give it any name, and finish creating it (Analytics can be skipped).</li>
-        <li>In the left sidebar under <strong>Build</strong>, click <strong>Realtime Database</strong> → <strong>Create Database</strong>. Pick any location and choose <strong>Start in test mode</strong>.</li>
-        <li>Go to the <strong>Rules</strong> tab of that database and replace the contents with:
-          <pre style="background:#fff; border:1px solid var(--line); border-radius:4px; padding:10px; font-size:12px; overflow-x:auto;">{
-  "rules": {
-    "standby_draw_oct_2026": {
-      ".read": true,
-      ".write": true
-    }
-  }
-}</pre>
-          then click <strong>Publish</strong>.
-        </li>
-        <li>Back on the Realtime Database main page, copy the <strong>Database URL</strong> shown near the top (looks like <code>https://your-project-default-rtdb.firebaseio.com</code>).</li>
-        <li>Send that URL to whoever maintains this page's source so they can finish the connection.</li>
+        <li>Go to <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a>.</li>
+        <li>Under <strong>Repository access</strong>, choose <strong>Only select repositories</strong> and pick this repo.</li>
+        <li>Under <strong>Permissions</strong> → <strong>Repository permissions</strong>, set <strong>Contents</strong> to <strong>Read and write</strong>. Leave everything else as No access.</li>
+        <li>Since this token will stay embedded in the public page for the whole event, set a long expiration (or no expiration).</li>
+        <li>Generate the token, copy it, and send it to whoever maintains this page's source so they can finish the connection.</li>
       </ol>
-      <p>Once that's done, this screen will be replaced by the draw itself.</p>
+      <p style="color: var(--alert);">Note: this token will be visible in the page's source code to anyone who looks. Scoping it to only this repo's Contents keeps the worst case limited to someone editing the roster data.</p>
     </div>
   </div>
 
@@ -741,14 +731,30 @@ const PARTICIPANTS = [
 const STORE_KEY = 'standby_draw_oct_2026';
 let assignments = {}; // name -> day key
 
-// --- Shared data store (Firebase Realtime Database) ---
-// This URL is public once set, and the rules only open the one path used
-// below — same transparency level as the data itself being shared team-wide.
-// Leave FIREBASE_DB_URL empty until the one-time setup (see setup screen) is done.
-const FIREBASE_DB_URL = '';
+// --- Shared data store (a JSON file in this GitHub repo, via the GitHub API) ---
+// GITHUB_TOKEN is intentionally public/embedded here — a fine-grained token
+// scoped to ONLY this repo's Contents (read/write), so the worst case if
+// misused is someone editing the roster data file, nothing else.
+const GITHUB_TOKEN = '';
+const GITHUB_REPO = 'physophearak/StandbyDutyDraw';
+const GITHUB_FILE_PATH = 'data/assignments.json';
+const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/contents/${GITHUB_FILE_PATH}`;
 
-function firebaseUrl() {
-  return `${FIREBASE_DB_URL}/${STORE_KEY}.json`;
+let currentFileSha = null; // tracks the file version for safe overwrites
+
+function ghHeaders() {
+  return {
+    'Authorization': 'Bearer ' + GITHUB_TOKEN,
+    'Accept': 'application/vnd.github+json'
+  };
+}
+
+function b64EncodeUnicode(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
+function b64DecodeUnicode(str) {
+  return decodeURIComponent(escape(atob(str)));
 }
 
 function slugify(name) {
@@ -779,25 +785,80 @@ function dayShort(key) {
 }
 
 async function loadAssignments() {
-  if (!FIREBASE_DB_URL) { assignments = {}; return; }
+  if (!GITHUB_TOKEN) { assignments = {}; return; }
   try {
-    const res = await fetch(firebaseUrl(), { cache: 'no-store' });
+    const res = await fetch(GITHUB_API_URL, { headers: ghHeaders(), cache: 'no-store' });
+    if (res.status === 404) {
+      assignments = {};
+      currentFileSha = null;
+      return;
+    }
     if (!res.ok) throw new Error('load failed: ' + res.status);
-    const data = await res.json();
-    assignments = data || {};
+    const json = await res.json();
+    currentFileSha = json.sha;
+    const decoded = b64DecodeUnicode(json.content.replace(/\n/g, ''));
+    assignments = decoded ? JSON.parse(decoded) : {};
   } catch (e) {
     assignments = assignments || {};
   }
 }
 
-async function saveAssignments() {
-  if (!FIREBASE_DB_URL) throw new Error('No data store connected yet.');
-  const res = await fetch(firebaseUrl(), {
+async function writeAssignmentsFile(message) {
+  const body = {
+    message: message,
+    content: b64EncodeUnicode(JSON.stringify(assignments, null, 2)),
+    branch: 'main'
+  };
+  if (currentFileSha) body.sha = currentFileSha;
+
+  const res = await fetch(GITHUB_API_URL, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(assignments)
+    headers: Object.assign({ 'Content-Type': 'application/json' }, ghHeaders()),
+    body: JSON.stringify(body)
   });
+
+  if (res.status === 409 || res.status === 422) {
+    // Someone else saved in between — refresh sha and retry once
+    const fresh = await fetch(GITHUB_API_URL, { headers: ghHeaders(), cache: 'no-store' });
+    if (fresh.ok) {
+      const freshJson = await fresh.json();
+      currentFileSha = freshJson.sha;
+      const retryBody = Object.assign({}, body, { sha: currentFileSha });
+      const retryRes = await fetch(GITHUB_API_URL, {
+        method: 'PUT',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, ghHeaders()),
+        body: JSON.stringify(retryBody)
+      });
+      if (!retryRes.ok) throw new Error('save failed after retry: ' + retryRes.status);
+      const retryJson = await retryRes.json();
+      currentFileSha = retryJson.content.sha;
+      return;
+    }
+    throw new Error('save conflict, retry failed');
+  }
+
   if (!res.ok) throw new Error('save failed: ' + res.status);
+  const resJson = await res.json();
+  currentFileSha = resJson.content.sha;
+}
+
+async function refreshFileSha() {
+  try {
+    const res = await fetch(GITHUB_API_URL, { headers: ghHeaders(), cache: 'no-store' });
+    if (res.status === 404) { currentFileSha = null; return; }
+    if (res.ok) {
+      const json = await res.json();
+      currentFileSha = json.sha;
+    }
+  } catch (e) {
+    // keep whatever sha we had — writeAssignmentsFile's own conflict retry covers this
+  }
+}
+
+async function saveAssignments() {
+  if (!GITHUB_TOKEN) throw new Error('No data store connected yet.');
+  await refreshFileSha();
+  await writeAssignmentsFile('Update standby draw assignments');
 }
 
 function capacityRemaining(dayKey) {
@@ -1145,7 +1206,7 @@ document.getElementById('boardDetails').addEventListener('toggle', function() {
 });
 
 (async function init() {
-  if (!FIREBASE_DB_URL) {
+  if (!GITHUB_TOKEN) {
     document.getElementById('initialLoader').classList.add('hidden');
     document.getElementById('setupScreen').classList.remove('hidden');
     return;
