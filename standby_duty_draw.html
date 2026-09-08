@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Standby Duty Draw — Oct 2026</title>
+<style>
+  @font-face {
+    font-family: 'sys-slab';
+    src: local('Georgia');
+  }
+
+  :root{
+    --paper: #EFEAE0;
+    --panel: #1B2A41;
+    --panel-2: #24374F;
+    --ink: #1B2A41;
+    --ink-soft: #55606E;
+    --brass: #C9932A;
+    --brass-deep: #A5741B;
+    --line: #D8D0BF;
+    --empty-slot: #D8D0BF;
+    --alert: #8B3A3A;
+    --good: #3D6B4F;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 36px 24px 60px;
+  }
+
+  .masthead {
+    border-top: 3px solid var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 18px 0 16px;
+    margin-bottom: 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .masthead h1 {
+    font-size: 30px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: 0.2px;
+  }
+
+  .masthead .range {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 13px;
+    color: var(--ink-soft);
+    text-align: right;
+    line-height: 1.5;
+  }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 36px;
+  }
+
+  .day-col {
+    background: var(--panel);
+    border-radius: 4px;
+    padding: 16px 14px 14px;
+    color: #fff;
+  }
+
+  .day-col .day-name {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    color: #C9D3DD;
+    margin-bottom: 2px;
+  }
+
+  .day-col .day-date {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+
+  .day-col .count {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11px;
+    color: var(--brass);
+    margin-bottom: 10px;
+  }
+
+  .slot-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 30px;
+  }
+
+  .slot-list li {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 13.5px;
+    padding: 6px 8px;
+    border-radius: 3px;
+    background: var(--panel-2);
+  }
+
+  .slot-list li.empty {
+    color: #7C8899;
+    font-style: italic;
+    background: transparent;
+    border: 1px dashed #45566B;
+  }
+
+  .section-label {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.4px;
+    color: var(--ink-soft);
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .roster {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  @media (max-width: 640px) {
+    .roster { grid-template-columns: 1fr; }
+    .board { grid-template-columns: 1fr; }
+  }
+
+  .tag {
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--panel);
+    background: #fff;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-radius: 2px;
+    transition: border-left-color 0.3s ease;
+  }
+
+  .tag.assigned {
+    border-left-color: var(--brass);
+  }
+
+  .tag .name {
+    font-size: 15.5px;
+    font-weight: 700;
+  }
+
+  .tag .result {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12.5px;
+    color: var(--brass-deep);
+    font-weight: 700;
+    min-width: 84px;
+    text-align: right;
+  }
+
+  .tag .result.spinning {
+    color: var(--ink-soft);
+    font-weight: 400;
+  }
+
+  button.draw-btn {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12.5px;
+    letter-spacing: 0.3px;
+    background: var(--panel);
+    color: #fff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  button.draw-btn:hover:not(:disabled) {
+    background: var(--panel-2);
+  }
+
+  button.draw-btn:disabled {
+    background: var(--empty-slot);
+    color: #9A9484;
+    cursor: default;
+  }
+
+  .footer-row {
+    margin-top: 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12px;
+    color: var(--ink-soft);
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .reset-btn {
+    background: none;
+    border: 1px solid var(--alert);
+    color: var(--alert);
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11.5px;
+    padding: 6px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .reset-btn:hover:not(:disabled) { background: #FBEFEF; }
+
+  .reset-btn:disabled {
+    border-color: var(--line);
+    color: #B3AC9C;
+    cursor: default;
+  }
+
+  .reset-btn.confirming {
+    background: var(--alert);
+    color: #fff;
+    border-color: var(--alert);
+  }
+
+  .status-line {
+    min-height: 18px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12.5px;
+    color: var(--good);
+  }
+
+  .status-line.error { color: var(--alert); }
+
+  /* Draw modal */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(27, 42, 65, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 20px;
+  }
+
+  .overlay.hidden { display: none; }
+
+  .draw-modal {
+    background: var(--paper);
+    border-radius: 6px;
+    width: 100%;
+    max-width: 420px;
+    padding: 28px 26px 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+  }
+
+  .draw-modal .who {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.4px;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+  }
+
+  .draw-modal .who strong {
+    color: var(--ink);
+    font-family: Georgia, serif;
+    font-size: 17px;
+    display: block;
+    margin-top: 2px;
+  }
+
+  .wheel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 22px 0 20px;
+  }
+
+  .wheel-chip {
+    border: 1px solid var(--line);
+    background: #fff;
+    padding: 12px 10px;
+    border-radius: 4px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .wheel-chip .lbl {
+    font-size: 11px;
+    letter-spacing: 0.4px;
+    color: var(--ink-soft);
+  }
+
+  .wheel-chip .dt {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-top: 2px;
+  }
+
+  .wheel-chip.lit {
+    background: var(--panel);
+    border-color: var(--panel);
+    transform: scale(1.04);
+  }
+
+  .wheel-chip.lit .lbl { color: #C9D3DD; }
+  .wheel-chip.lit .dt { color: #fff; }
+
+  .wheel-chip.winner {
+    background: var(--brass);
+    border-color: var(--brass-deep);
+    transform: scale(1.06);
+  }
+
+  .wheel-chip.winner .lbl { color: #4A3406; }
+  .wheel-chip.winner .dt { color: var(--panel); }
+
+  .draw-modal .reveal-msg {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 13.5px;
+    color: var(--good);
+    min-height: 20px;
+    margin-bottom: 14px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .draw-modal .reveal-msg.show { opacity: 1; }
+
+  .modal-close-btn {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12.5px;
+    background: var(--panel);
+    color: #fff;
+    border: none;
+    padding: 9px 22px;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .modal-close-btn.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .confetti-piece {
+    position: absolute;
+    top: -10px;
+    width: 7px;
+    height: 12px;
+    opacity: 0.9;
+    animation: confetti-fall linear forwards;
+  }
+
+  @keyframes confetti-fall {
+    to {
+      transform: translateY(360px) rotate(360deg);
+      opacity: 0;
+    }
+  }
+
+  /* Personal (per-participant) view */
+  .personal-card {
+    max-width: 420px;
+    margin: 0 auto 10px;
+  }
+
+  .personal-card .tag {
+    padding: 22px 20px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    text-align: center;
+  }
+
+  .personal-card .tag .name {
+    font-size: 20px;
+  }
+
+  .personal-card .tag .result {
+    text-align: center;
+    font-size: 15px;
+    min-width: 0;
+  }
+
+  .personal-card button.draw-btn {
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+
+  .unknown-link {
+    max-width: 420px;
+    margin: 0 auto;
+    text-align: center;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 13.5px;
+    color: var(--alert);
+  }
+
+  /* QR admin panel */
+  .qr-toggle {
+    display: block;
+    margin: 34px auto 0;
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12px;
+    padding: 8px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .qr-panel {
+    margin-top: 18px;
+    border-top: 1px solid var(--line);
+    padding-top: 20px;
+  }
+
+  .qr-panel.hidden { display: none; }
+
+  .qr-panel .url-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .qr-panel input[type="text"] {
+    flex: 1;
+    min-width: 220px;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 13px;
+  }
+
+  .qr-panel button {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12.5px;
+    background: var(--panel);
+    color: #fff;
+    border: none;
+    padding: 9px 16px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .qr-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+  }
+
+  .qr-card {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 12px;
+    text-align: center;
+    background: #fff;
+  }
+
+  .qr-card .qr-name {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12.5px;
+    font-weight: 700;
+    margin-top: 8px;
+    margin-bottom: 2px;
+  }
+
+  .qr-card .qr-link {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 10px;
+    color: var(--ink-soft);
+    word-break: break-all;
+  }
+
+  .qr-card canvas, .qr-card img {
+    margin: 0 auto;
+  }
+
+  @media print {
+    .no-print { display: none !important; }
+    .qr-panel { border: none; }
+    .qr-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <h1 id="pageTitle">Standby Duty Draw</h1>
+    <div class="range" id="pageSubtitle">Shared roster · everyone sees the same result<br>Refreshes automatically after each draw</div>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <p class="section-label" id="rosterLabel">ROSTER — CLICK YOUR OWN NAME TO DRAW A DAY</p>
+  <div class="roster" id="roster"></div>
+
+  <div class="footer-row no-print" id="footerRow">
+    <span class="status-line" id="status"></span>
+    <button class="reset-btn" id="resetBtn">Clear all draws</button>
+  </div>
+
+  <button class="qr-toggle no-print" id="qrToggle">Admin: generate per-person QR codes</button>
+
+  <div class="qr-panel hidden no-print" id="qrPanel">
+    <p class="section-label">PASTE THE PUBLISHED LINK TO THIS PAGE, THEN GENERATE</p>
+    <div class="url-row">
+      <input type="text" id="baseUrlInput" placeholder="https://claude.ai/public/artifacts/..." />
+      <button id="generateQrBtn">Generate QR codes</button>
+      <button id="printQrBtn">Print</button>
+    </div>
+    <div class="qr-grid" id="qrGrid"></div>
+  </div>
+
+</div>
+
+<div class="overlay hidden" id="overlay">
+  <div class="draw-modal" id="drawModal">
+    <div class="who">DRAWING FOR<strong id="modalName">—</strong></div>
+    <div class="wheel" id="wheel"></div>
+    <div class="reveal-msg" id="revealMsg"></div>
+    <button class="modal-close-btn" id="modalCloseBtn">Done</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const DAYS = [
+  { key: 'oct10', name: 'DAY ONE', date: 'Sat, 10 Oct 2026', cap: 5 },
+  { key: 'oct11', name: 'DAY TWO', date: 'Sun, 11 Oct 2026', cap: 5 },
+  { key: 'oct12', name: 'DAY THREE', date: 'Mon, 12 Oct 2026', cap: 4 }
+];
+
+const PARTICIPANTS = [
+  'Mr. Thoem Puthea', 'Mr. Chea Chiheang', 'Mr. Leap Channo', 'Mr. Thai Vichet',
+  'Mr. Cheang Kimleang', 'Mr. Oeun Songda', 'Mr. Pop Saron', 'Mr. Ouk Sopheak',
+  'Mr. Kep Pisoth', 'Mr. Meas Sangpiseth', 'Mr. You Sothea', 'Mr. Soeurn Long',
+  'Mr. Sen Vesal', 'Mr. Bour Sambath'
+];
+
+const STORE_KEY = 'standby_draw_oct_2026';
+let assignments = {}; // name -> day key
+
+function slugify(name) {
+  return name
+    .toLowerCase()
+    .replace(/^mr\.?\s*/, '')
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+const SLUG_TO_NAME = {};
+PARTICIPANTS.forEach(n => { SLUG_TO_NAME[slugify(n)] = n; });
+
+function getPersonalSlug() {
+  const m = location.hash.match(/p=([a-z0-9-]+)/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+function dayLabel(key) {
+  const d = DAYS.find(d => d.key === key);
+  return d ? d.date : key;
+}
+
+function dayShort(key) {
+  const d = DAYS.find(d => d.key === key);
+  return d ? d.name : key;
+}
+
+async function loadAssignments() {
+  try {
+    const res = await window.storage.get(STORE_KEY, true);
+    assignments = res && res.value ? JSON.parse(res.value) : {};
+  } catch (e) {
+    assignments = {};
+  }
+}
+
+async function saveAssignments() {
+  await window.storage.set(STORE_KEY, JSON.stringify(assignments), true);
+}
+
+function capacityRemaining(dayKey) {
+  const cap = DAYS.find(d => d.key === dayKey).cap;
+  const used = Object.values(assignments).filter(v => v === dayKey).length;
+  return cap - used;
+}
+
+function availableDays() {
+  return DAYS.filter(d => capacityRemaining(d.key) > 0).map(d => d.key);
+}
+
+function setStatus(msg, isError) {
+  const el = document.getElementById('status');
+  el.textContent = msg || '';
+  el.className = 'status-line' + (isError ? ' error' : '');
+}
+
+function render() {
+  const slug = getPersonalSlug();
+  const personalName = slug ? SLUG_TO_NAME[slug] : null;
+
+  // Masthead + section label swap for personal mode
+  const footerRow = document.getElementById('footerRow');
+  const qrToggle = document.getElementById('qrToggle');
+  const qrPanel = document.getElementById('qrPanel');
+
+  if (slug) {
+    footerRow.classList.add('no-print');
+    footerRow.style.display = 'none';
+    qrToggle.style.display = 'none';
+    qrPanel.classList.add('hidden');
+    document.getElementById('pageSubtitle').innerHTML = 'Tap the button below to draw your day';
+  } else {
+    footerRow.style.display = '';
+    qrToggle.style.display = '';
+    document.getElementById('pageSubtitle').innerHTML = 'Shared roster · everyone sees the same result<br>Refreshes automatically after each draw';
+    const resetBtn = document.getElementById('resetBtn');
+    resetBtn.disabled = Object.keys(assignments).length === 0;
+  }
+
+  // Board (shown in both modes)
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  DAYS.forEach(day => {
+    const names = Object.keys(assignments).filter(n => assignments[n] === day.key);
+    const col = document.createElement('div');
+    col.className = 'day-col';
+    col.innerHTML = `
+      <div class="day-name">${day.name}</div>
+      <div class="day-date">${day.date}</div>
+      <div class="count">${names.length} / ${day.cap} filled</div>
+      <ul class="slot-list">
+        ${Array.from({length: day.cap}).map((_, i) => {
+          const n = names[i];
+          return n ? `<li>${n}</li>` : `<li class="empty">open slot</li>`;
+        }).join('')}
+      </ul>
+    `;
+    board.appendChild(col);
+  });
+
+  const roster = document.getElementById('roster');
+  const rosterLabel = document.getElementById('rosterLabel');
+  roster.innerHTML = '';
+
+  if (slug && !personalName) {
+    rosterLabel.textContent = 'LINK NOT RECOGNIZED';
+    roster.innerHTML = '<div class="unknown-link">This personal draw link doesn\'t match anyone on the roster. Check the QR code or link and try again.</div>';
+    return;
+  }
+
+  if (personalName) {
+    rosterLabel.textContent = 'YOUR DRAW';
+    roster.className = 'roster personal-card';
+    roster.appendChild(buildTag(personalName));
+    return;
+  }
+
+  rosterLabel.textContent = 'ROSTER — CLICK YOUR OWN NAME TO DRAW A DAY';
+  roster.className = 'roster';
+  PARTICIPANTS.forEach(name => roster.appendChild(buildTag(name)));
+}
+
+function buildTag(name) {
+  const assigned = assignments[name];
+  const tag = document.createElement('div');
+  tag.className = 'tag' + (assigned ? ' assigned' : '');
+
+  const resultText = assigned ? dayShort(assigned) + ' · ' + dayLabel(assigned).split(', ')[1] : '';
+
+  tag.innerHTML = `
+    <div class="name">${name}</div>
+    <div class="result">${resultText}</div>
+  `;
+
+  if (!assigned) {
+    const btn = document.createElement('button');
+    btn.className = 'draw-btn';
+    btn.textContent = 'Draw';
+    btn.disabled = availableDays().length === 0;
+    btn.addEventListener('click', () => openDrawModal(name));
+    tag.appendChild(btn);
+  }
+
+  return tag;
+}
+
+function buildWheel() {
+  const wheel = document.getElementById('wheel');
+  wheel.innerHTML = DAYS.map(d => `
+    <div class="wheel-chip" data-key="${d.key}">
+      <div class="lbl">${d.name}</div>
+      <div class="dt">${d.date}</div>
+    </div>
+  `).join('');
+}
+
+function spawnConfetti(container) {
+  const colors = ['#C9932A', '#3D6B4F', '#1B2A41', '#A5741B'];
+  for (let i = 0; i < 26; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = Math.random() * 100 + '%';
+    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+    piece.style.animationDuration = (0.9 + Math.random() * 0.6) + 's';
+    piece.style.animationDelay = (Math.random() * 0.15) + 's';
+    container.appendChild(piece);
+    setTimeout(() => piece.remove(), 2000);
+  }
+}
+
+async function openDrawModal(name) {
+  setStatus('');
+  await loadAssignments();
+
+  if (assignments[name]) {
+    render();
+    setStatus(name + ' has already been drawn for ' + dayLabel(assignments[name]) + '.', false);
+    return;
+  }
+
+  const pool = availableDays();
+  if (pool.length === 0) {
+    render();
+    setStatus('All slots are full.', true);
+    return;
+  }
+
+  buildWheel();
+  document.getElementById('modalName').textContent = name;
+  document.getElementById('revealMsg').className = 'reveal-msg';
+  document.getElementById('revealMsg').textContent = '';
+  document.getElementById('modalCloseBtn').className = 'modal-close-btn';
+  document.getElementById('overlay').classList.remove('hidden');
+
+  // Spinning highlight across the three day chips, slowing down like a wheel
+  const chips = [...document.querySelectorAll('.wheel-chip')];
+  const stepDelays = [80, 80, 90, 100, 120, 140, 170, 210, 260, 320, 400];
+  let i = 0;
+
+  function step() {
+    chips.forEach(c => c.classList.remove('lit'));
+    chips[i % chips.length].classList.add('lit');
+    i++;
+    if (i < stepDelays.length) {
+      setTimeout(step, stepDelays[i]);
+    } else {
+      finalizeDraw(name, pool, chips);
+    }
+  }
+  step();
+}
+
+async function finalizeDraw(name, pool, chips) {
+  // Re-check freshest state right before committing, in case someone else drew meanwhile
+  await loadAssignments();
+  if (assignments[name]) {
+    chips.forEach(c => c.classList.remove('lit'));
+    document.getElementById('overlay').classList.add('hidden');
+    render();
+    return;
+  }
+  const freshPool = availableDays();
+  const choicePool = freshPool.length > 0 ? freshPool : pool;
+  const chosen = choicePool[Math.floor(Math.random() * choicePool.length)];
+
+  chips.forEach(c => c.classList.remove('lit'));
+  const winnerChip = chips.find(c => c.dataset.key === chosen);
+  if (winnerChip) winnerChip.classList.add('winner');
+
+  assignments[name] = chosen;
+
+  try {
+    await saveAssignments();
+    const revealEl = document.getElementById('revealMsg');
+    revealEl.textContent = name + ' is on standby for ' + dayLabel(chosen) + '.';
+    revealEl.classList.add('show');
+    spawnConfetti(document.getElementById('drawModal'));
+    setStatus(name + ' drew ' + dayLabel(chosen) + '.', false);
+  } catch (e) {
+    const revealEl = document.getElementById('revealMsg');
+    revealEl.textContent = 'Could not save the result — please try again.';
+    revealEl.className = 'reveal-msg show error';
+    delete assignments[name];
+  }
+
+  document.getElementById('modalCloseBtn').classList.add('show');
+  render();
+}
+
+document.getElementById('modalCloseBtn').addEventListener('click', () => {
+  document.getElementById('overlay').classList.add('hidden');
+  render();
+});
+
+let resetConfirmTimer = null;
+
+async function handleReset() {
+  const btn = document.getElementById('resetBtn');
+
+  if (Object.keys(assignments).length === 0) return;
+
+  if (!btn.classList.contains('confirming')) {
+    // Arm the confirmation
+    btn.classList.add('confirming');
+    btn.textContent = 'Click again to confirm';
+    clearTimeout(resetConfirmTimer);
+    resetConfirmTimer = setTimeout(() => {
+      btn.classList.remove('confirming');
+      btn.textContent = 'Clear all draws';
+    }, 4000);
+    return;
+  }
+
+  // Second click within the window: actually clear
+  clearTimeout(resetConfirmTimer);
+  btn.classList.remove('confirming');
+  btn.disabled = true;
+  btn.textContent = 'Clearing…';
+
+  assignments = {};
+  try {
+    await saveAssignments();
+    setStatus('All draws cleared.', false);
+  } catch (e) {
+    setStatus('Could not clear the draw — please try again.', true);
+  }
+  btn.textContent = 'Clear all draws';
+  render();
+}
+
+document.getElementById('resetBtn').addEventListener('click', handleReset);
+
+window.addEventListener('hashchange', render);
+
+// --- QR admin panel ---
+document.getElementById('qrToggle').addEventListener('click', () => {
+  const panel = document.getElementById('qrPanel');
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden') && !document.getElementById('baseUrlInput').value) {
+    document.getElementById('baseUrlInput').value = location.origin + location.pathname;
+  }
+});
+
+document.getElementById('generateQrBtn').addEventListener('click', () => {
+  const base = document.getElementById('baseUrlInput').value.trim().replace(/#.*$/, '');
+  if (!base) {
+    alert('Paste the published link to this page first.');
+    return;
+  }
+  const grid = document.getElementById('qrGrid');
+  grid.innerHTML = '';
+  PARTICIPANTS.forEach(name => {
+    const slug = slugify(name);
+    const link = base + '#p=' + slug;
+
+    const card = document.createElement('div');
+    card.className = 'qr-card';
+    const qrHolder = document.createElement('div');
+    card.appendChild(qrHolder);
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'qr-name';
+    nameEl.textContent = name;
+    card.appendChild(nameEl);
+
+    const linkEl = document.createElement('div');
+    linkEl.className = 'qr-link';
+    linkEl.textContent = link;
+    card.appendChild(linkEl);
+
+    grid.appendChild(card);
+
+    if (window.QRCode) {
+      new QRCode(qrHolder, { text: link, width: 128, height: 128 });
+    } else {
+      qrHolder.textContent = '(QR library failed to load — link above still works)';
+    }
+  });
+});
+
+document.getElementById('printQrBtn').addEventListener('click', () => window.print());
+
+(async function init() {
+  setStatus('Loading roster…', false);
+  await loadAssignments();
+  setStatus('', false);
+  render();
+})();
+</script>
+</body>
+</html>
